@@ -376,7 +376,7 @@ approach and changed it is in AI_LOG.md. Short version of the ones
 that mattered most:
 
 - **Two models, not one, and a session can have many validation attempts** 
-  OnboardingSession holds the wizard's current state
+OnboardingSession holds the wizard's current state
   (fields, current step, isLive). ValidationAttempt is its own table,
   one row per attempt, linked back by sessionId. Went with many
   attempts per session instead of one field that gets overwritten
@@ -388,7 +388,7 @@ that mattered most:
   It also keeps each retry as its own independent row.  Didn't need a separate partner/user model since there's no
   auth, and didn't need a join table since it's a simple one-to-many.
 
- **currentStep is a state machine, not just a status label or a Front End only state.**
+ - **currentStep is a state machine, not just a status label or a Front End only state.**
   It only ever moves forward, DETAILS → VALIDATE → REVIEW, one
   direction, no way to jump ahead or skip a step. Every endpoint that
   advances it checks the session is actually in the expected prior
