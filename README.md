@@ -312,6 +312,18 @@ There's no real external Provider — the "Api Key" field entered on Step 1 (Det
 
 The outcome isn't instant — landing on Step 2 (or clicking Retry) shows a "Validating..." pending banner for about 5 simulated seconds before resolving, the same as it would waiting on a real external call.
 
+## API endpoints
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| POST | `/sessions` | Create a new session |
+| GET | `/sessions/:id` | Fetch a session (404 if not found) |
+| POST | `/sessions/:id/details` | Submit Step 1, advances to VALIDATE |
+| POST | `/sessions/:id/validate` | Trigger/retry validation |
+| GET | `/sessions/:id/validation` | Poll the latest validation attempt |
+| POST | `/sessions/:id/advance-to-review` | Advance to REVIEW (requires VALID/PARTIAL) |
+| POST | `/sessions/:id/go-live` | Go live (requires REVIEW) |
+
 ## Key assumptions & design decisions
 
 The full reasoning behind each of these, including the back-and-forth where things were proposed one way and changed, is in [AI_LOG.md](./AI_LOG.md). The short version of the ones that most shaped the app:
