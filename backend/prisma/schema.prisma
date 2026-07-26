@@ -1,0 +1,76 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+/// The 3 wizard steps only. Completion/"live" is NOT a 4th value here —
+/// see OnboardingSession.isLive.
+enum WizardStep {
+  DETAILS
+  VALIDATE
+  REVIEW
+}
+
+/// Lifecycle of a single ValidationAttempt row.
+enum ValidationStatus {
+  PENDING
+  VALID
+  PARTIAL
+  INVALID
+  UNAVAILABLE
+}
+
+model OnboardingSession {
+  id String @id @default(cuid())
+
+  /// Wizard position pointer. Only ever DETAILS | VALIDATE | REVIEW.
+  /// Meaningless once isLive is true — reads must check isLive first,
+  /// currentStep second.
+  currentStep WizardStep @default(DETAILS)
+
+  // --- Step 1: Details (all nullable until filled) ---
+  companyName       String?
+  providerAccountId String?
+  providerApiKey    String?
+
+  // --- Step 3: completion ---
+  /// Sole source of truth for "is this partner live". False = still in the
+  /// wizard. True = live. Never flipped back to false by normal app flow
+  /// (no "un-live" path exists).
+  isLive Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  validationAttempts ValidationAttempt[]
+}
+
+model ValidationAttempt {
+  id String @id @default(cuid())
+
+  sessionId String
+  session   OnboardingSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  status ValidationStatus @default(PENDING)
+
+  /// Outcome-specific payload — shape depends on `status`, validated by a
+  /// discriminated union in app code, not the schema:
+  ///   VALID:       { items: Item[] }
+  ///   PARTIAL:     { items: Item[], warnings: string[] }
+  ///   INVALID:     { reason: string }
+  ///   UNAVAILABLE: { reason: string, httpStatus?: number }
+  ///   PENDING:     null
+  payload Json?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([sessionId, createdAt(sort: Desc)])
+}
