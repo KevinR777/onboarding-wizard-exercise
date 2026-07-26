@@ -172,6 +172,13 @@ npx prisma studio
 
 This opens a browser-based table viewer against whatever `DATABASE_URL` is currently set to (the dev database, `onboarding_wizard`, if run without an override). It picks its own available port and prints the URL to open, so watch the terminal output rather than assuming a fixed address. Useful for watching `OnboardingSession`/`ValidationAttempt` rows change as you go through the wizard, without writing any SQL by hand.
 
+Studio isn't fully reliable against this project's bundled local `prisma dev` server on every machine (it's a lightweight reimplementation of Postgres, not the real thing, and Studio's schema introspection can fail against it even when the data itself is fine). If Studio shows an error or "No tables found" instead of your data, use these instead — they query the same database directly and print every column for every row, e.g. to visually confirm a duplicate/double-click didn't create an extra row:
+
+```bash
+npm run db:sessions   # all OnboardingSession rows, every column
+npm run db:attempts   # all ValidationAttempt rows, every column
+```
+
 #### Running the tests (macOS / Linux)
 
 In two more terminal tabs (or one at a time, these don't need to stay running):
@@ -310,6 +317,13 @@ npx prisma studio
 ```
 
 This opens a browser-based table viewer against whatever `DATABASE_URL` is currently set to (the dev database, `onboarding_wizard`, if run without an override). It picks its own available port and prints the URL to open, so watch the terminal output rather than assuming a fixed address. Useful for watching `OnboardingSession`/`ValidationAttempt` rows change as you go through the wizard, without writing any SQL by hand.
+
+**Studio does not reliably work on Windows against this project's bundled local `prisma dev` server** — it's a lightweight reimplementation of Postgres, not the real thing, and Studio's schema introspection can fail (`Could not load schema metadata`, or a false "No tables found") even when the data itself is completely fine. If that happens, use these instead — they query the same database directly and print every column for every row, e.g. to visually confirm a duplicate/double-click didn't create an extra row:
+
+```powershell
+npm run db:sessions   # all OnboardingSession rows, every column
+npm run db:attempts   # all ValidationAttempt rows, every column
+```
 
 #### Running the tests (Windows)
 
