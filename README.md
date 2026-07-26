@@ -13,6 +13,23 @@ See [AI_LOG.md](./AI_LOG.md) for the full prompt-by-prompt build log, including 
 
 These steps assume a completely fresh computer, nothing pre-installed, no prior Node/Postgres setup. Pick the section for your OS and follow it top to bottom; the two are independent, so there's no need to cross-reference between them. Nothing needs a GUI database tool or a separately-installed Postgres either way, the one command in Step 2 (`npx prisma dev`) provides a real Postgres-compatible database on its own.
 
+### Get the code
+
+Everything below refers to "the repo root", get a local copy of it first. This uses the repo's public HTTPS URL, so no SSH key or login is needed.
+
+1. Confirm Git is installed:
+   ```bash
+   git --version
+   ```
+   If that fails: on macOS, running any `git` command for the first time usually prompts you to install Apple's Command Line Tools, just follow that prompt; on Windows, download and run the installer from [git-scm.com/downloads](https://git-scm.com/downloads).
+2. Clone the repo and move into it:
+   ```bash
+   git clone https://github.com/KevinR777/onboarding-wizard-exercise.git
+   cd onboarding-wizard-exercise
+   ```
+
+Now pick the section below for your OS:
+
 - [macOS / Linux](#macos--linux)
 - [Windows](#windows)
 
