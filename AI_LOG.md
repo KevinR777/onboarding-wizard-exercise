@@ -3250,20 +3250,3 @@ Then the user sent the full spec for wiring up Step 2 in the frontend — this m
 **User (verbatim):** "I need you to create an AI_LOG.md file next to the RAEDME.md. This AI log needs to be an interaction log used to create this app (from beginning of the claude session until now) with as much detail and history as possible: the actual prompts and the model's responses (raw is fine — unedited is better than tidy); where you accepted, rejected, or redirected the AI"
 
 **Model:** Wrote this file.
-
----
-
-## Summary tally of redirects/rejections
-
-| # | Feature | What was rejected/redirected | Resolution |
-|---|---|---|---|
-| 1 | Step 2 frontend plan | `ValidationPayload` shape — wanted a proper discriminated union | Rewrote to mirror backend's `MockProviderOutcome` |
-| 2 | Step 2 frontend plan | Wanted individually-named payload types (`ValidPayload`, etc.) | Split into named exported types |
-| 3 | Step 2 frontend plan | `.catch()` chain in the auto-trigger effect | Rewrote as `async`/`try`/`catch` |
-| 4 | Step 2 frontend plan | `Box` used for button alignment | Swapped for `Container` |
-| 5 | Step 2 frontend plan | Question (not rejection): should derived values be `useState`? | Explained why not; no code change; accepted |
-| 6 | Go-live plan | `goLive`'s final read-back — wanted explicit `count === 0` branch | Added the branch |
-| 7 | Go-live plan | Reversed #6 — decided the branch was redundant | Reverted to a single `findUniqueOrThrow` |
-| 8 | Go-live implementation | Rejected exporting `sessionQueryKey` from `useGetSession.ts` | Kept that file untouched; inlined the key in `useGoLive.ts` instead |
-
-Every other feature request in this session (backend Step 2 completion, advance-to-review + Review step, the `submitDetails` refactor, the Go Home button and its style tweak) was implemented and accepted without a rejection loop.

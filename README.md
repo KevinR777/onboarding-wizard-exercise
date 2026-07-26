@@ -57,39 +57,45 @@ cd backend
 npm install
 ```
 
-Start Prisma's built-in local Postgres-compatible server. **Leave this running**, open a new terminal tab/window for every step after this one, and don't close this one while you're working on the project:
+Start Prisma's built-in local Postgres-compatible server, giving it an explicit, memorable name (`--name`) so it doesn't share the generic `default` slot with any other Prisma-based project you might have on this machine. **Leave this running**, open a new terminal tab/window for every step after this one, and don't close this one while you're working on the project:
 
 ```bash
-npx prisma dev
+npx prisma dev --name onboarding-wizard
 ```
 
-You should see it report that it's listening (on `localhost:51214`; a second, lightweight instance on `51215` is used internally as a migration "shadow" database, see `prisma.config.ts`, no action needed for that one).
+It prints a line like `postgres://postgres:postgres@localhost:PORT/template1?sslmode=disable` — note the port number. It's assigned automatically the first time this named server is created and is **not guaranteed to be the same on every machine**, so the exact value matters for the next few steps (a second, lightweight instance one port higher is used internally as a migration "shadow" database, see `prisma.config.ts`, no action needed for that one).
 
 #### Step 3, Create the two databases
 
-In a **new terminal tab/window**, `cd` back into `backend/` and create the two databases this project uses, one for normal use, one dedicated to the test suite, kept separate so running tests never touches your real data:
+In a **new terminal tab/window**, `cd` back into `backend/`. Save the port Step 2 printed as a variable — replace `51214` below with whatever you actually saw (or run `npx prisma dev ls` in this terminal if you need to look it up again):
 
 ```bash
 cd backend
-echo "CREATE DATABASE onboarding_wizard;" | DATABASE_URL="postgres://postgres:postgres@localhost:51214/template1?sslmode=disable" npx prisma db execute --stdin
-echo "CREATE DATABASE onboarding_wizard_test;" | DATABASE_URL="postgres://postgres:postgres@localhost:51214/template1?sslmode=disable" npx prisma db execute --stdin
+export DB_PORT=51214   # replace with the port from Step 2
+```
+
+Then create the two databases this project uses, one for normal use, one dedicated to the test suite, kept separate so running tests never touches your real data:
+
+```bash
+echo "CREATE DATABASE onboarding_wizard;" | DATABASE_URL="postgres://postgres:postgres@localhost:${DB_PORT}/template1?sslmode=disable" npx prisma db execute --stdin
+echo "CREATE DATABASE onboarding_wizard_test;" | DATABASE_URL="postgres://postgres:postgres@localhost:${DB_PORT}/template1?sslmode=disable" npx prisma db execute --stdin
 ```
 
 Each should print `Script executed successfully.` (These two commands connect to Postgres's own always-present `template1` database just long enough to create the two new ones, this is what avoids needing a separate database client like `psql` installed.)
 
 #### Step 4, Configure environment variables
 
-Create two small text files that tell the app where to find those databases. Run these exactly as shown (still inside `backend/`), they create the files directly from the terminal, no text editor needed:
+Create two small text files that tell the app where to find those databases. Run these exactly as shown (still inside `backend/`, same terminal, so `$DB_PORT` is still set) — they create the files directly from the terminal, no text editor needed. Note this uses an unquoted `<<EOF` (not `<<'EOF'`), so `$DB_PORT` gets substituted with its actual value in the file:
 
 ```bash
-cat > .env <<'EOF'
-DATABASE_URL="postgres://postgres:postgres@localhost:51214/onboarding_wizard?sslmode=disable"
+cat > .env <<EOF
+DATABASE_URL="postgres://postgres:postgres@localhost:${DB_PORT}/onboarding_wizard?sslmode=disable"
 EOF
 ```
 
 ```bash
-cat > .env.test <<'EOF'
-DATABASE_URL="postgres://postgres:postgres@localhost:51214/onboarding_wizard_test?sslmode=disable"
+cat > .env.test <<EOF
+DATABASE_URL="postgres://postgres:postgres@localhost:${DB_PORT}/onboarding_wizard_test?sslmode=disable"
 EOF
 ```
 
@@ -97,15 +103,15 @@ EOF
 
 #### Step 5, Create the database tables
 
-Apply the schema, including one hand-written partial unique index (`ValidationAttempt_sessionId_pending_key`, `WHERE status = 'PENDING'`) that Prisma's own schema language can't express, so it's written directly as SQL in this migration file instead of `schema.prisma`, to **both** databases using the migration file already in the repo:
+Apply the schema, including one hand-written partial unique index (`ValidationAttempt_sessionId_pending_key`, `WHERE status = 'PENDING'`) that Prisma's own schema language can't express, so it's written directly as SQL in the migration file in the repo instead of `schema.prisma`, to **both** databases:
 
 ```bash
-npx prisma db execute --file prisma/migrations/00000000000000_init/migration.sql
-DATABASE_URL="postgres://postgres:postgres@localhost:51214/onboarding_wizard_test?sslmode=disable" \
-  npx prisma db execute --file prisma/migrations/00000000000000_init/migration.sql
+npx prisma migrate deploy
+DATABASE_URL="postgres://postgres:postgres@localhost:${DB_PORT}/onboarding_wizard_test?sslmode=disable" \
+  npx prisma migrate deploy
 ```
 
-(The first command uses `.env`'s `DATABASE_URL` automatically; the second overrides it inline to target the test database instead. `prisma migrate dev` doesn't work cleanly against this particular bundled local server, which is why `db execute` running the migration file directly is used here instead.)
+(The first command uses `.env`'s `DATABASE_URL` automatically; the second overrides it inline to target the test database instead. `migrate deploy` applies whatever's in `prisma/migrations/` — including the hand-written partial index, since it's part of that migration file — and records it in a `_prisma_migrations` table, so this is genuinely tracked migration history rather than a one-off raw SQL run. `prisma migrate dev` still doesn't work cleanly against this particular bundled local server, since it needs to diff against a shadow database; `migrate deploy` doesn't need that step, so it works fine here.)
 
 Then generate the Prisma database client (the typed code the backend actually imports):
 
@@ -193,49 +199,57 @@ cd backend
 npm install
 ```
 
-Start Prisma's built-in local Postgres-compatible server. **Leave this running**, open a new PowerShell window for every step after this one, and don't close this one while you're working on the project:
+Start Prisma's built-in local Postgres-compatible server, giving it an explicit, memorable name (`--name`) so it doesn't share the generic `default` slot with any other Prisma-based project you might have on this machine. **Leave this running**, open a new PowerShell window for every step after this one, and don't close this one while you're working on the project:
 
 ```powershell
-npx prisma dev
+npx prisma dev --name onboarding-wizard
 ```
 
-You should see it report that it's listening (on `localhost:51214`; a second, lightweight instance on `51215` is used internally as a migration "shadow" database, see `prisma.config.ts`, no action needed for that one).
+It prints a line like `postgres://postgres:postgres@localhost:PORT/template1?sslmode=disable` — note the port number. It's assigned automatically the first time this named server is created and is **not guaranteed to be the same on every machine**, so the exact value matters for the next few steps (a second, lightweight instance one port higher is used internally as a migration "shadow" database, see `prisma.config.ts`, no action needed for that one).
 
 #### Step 3, Create the two databases
 
-In a **new PowerShell window**, `cd` back into `backend/` and create the two databases this project uses, one for normal use, one dedicated to the test suite, kept separate so running tests never touches your real data:
+In a **new PowerShell window**, `cd` back into `backend/`. Save the port Step 2 printed as a variable — replace `51214` below with whatever you actually saw (or run `npx prisma dev ls` in this window if you need to look it up again):
 
 ```powershell
 cd backend
-$env:DATABASE_URL = "postgres://postgres:postgres@localhost:51214/template1?sslmode=disable"
+$env:DB_PORT = "51214"   # replace with the port from Step 2
+```
+
+Then create the two databases this project uses, one for normal use, one dedicated to the test suite, kept separate so running tests never touches your real data:
+
+```powershell
+$env:DATABASE_URL = "postgres://postgres:postgres@localhost:$env:DB_PORT/template1?sslmode=disable"
 "CREATE DATABASE onboarding_wizard;" | npx prisma db execute --stdin
 "CREATE DATABASE onboarding_wizard_test;" | npx prisma db execute --stdin
 ```
 
-Each should print `Script executed successfully.` (These commands connect to Postgres's own always-present `template1` database just long enough to create the two new ones, this is what avoids needing a separate database client like `psql` installed. `$env:DATABASE_URL` stays set for the rest of *this* PowerShell window, which Step 5 below accounts for.)
+Each should print `Script executed successfully.` (These commands connect to Postgres's own always-present `template1` database just long enough to create the two new ones, this is what avoids needing a separate database client like `psql` installed. `$env:DATABASE_URL` stays set for the rest of *this* PowerShell window, which Step 5 below accounts for; `$env:DB_PORT` stays set too, so later steps in this same window can keep reusing it.)
 
 #### Step 4, Configure environment variables
 
-Create two small text files that tell the app where to find those databases (still inside `backend/`), no text editor needed:
+Create two small text files that tell the app where to find those databases (still inside `backend/`, same window, so `$env:DB_PORT` is still set), no text editor needed:
 
 ```powershell
-Set-Content -Path .env -Value 'DATABASE_URL="postgres://postgres:postgres@localhost:51214/onboarding_wizard?sslmode=disable"'
-Set-Content -Path .env.test -Value 'DATABASE_URL="postgres://postgres:postgres@localhost:51214/onboarding_wizard_test?sslmode=disable"'
+Set-Content -Path .env -Value "DATABASE_URL=`"postgres://postgres:postgres@localhost:$env:DB_PORT/onboarding_wizard?sslmode=disable`""
+Set-Content -Path .env.test -Value "DATABASE_URL=`"postgres://postgres:postgres@localhost:$env:DB_PORT/onboarding_wizard_test?sslmode=disable`""
 ```
 
 (These two files are intentionally excluded from version control, `.env*` in `backend/.gitignore`, since env files are where secrets/credentials normally go, even though these particular values are just local dev defaults.)
 
 #### Step 5, Create the database tables
 
-Apply the schema, including one hand-written partial unique index (`ValidationAttempt_sessionId_pending_key`, `WHERE status = 'PENDING'`) that Prisma's own schema language can't express, so it's written directly as SQL in this migration file instead of `schema.prisma`, to **both** databases using the migration file already in the repo. Set `$env:DATABASE_URL` explicitly before each call rather than relying on `.env` here, since PowerShell keeps environment variables set for the rest of the window (unlike a one-off prefix in bash), Step 3 already left it pointed at `template1`:
+Apply the schema, including one hand-written partial unique index (`ValidationAttempt_sessionId_pending_key`, `WHERE status = 'PENDING'`) that Prisma's own schema language can't express, so it's written directly as SQL in the migration file in the repo instead of `schema.prisma`, to **both** databases. Set `$env:DATABASE_URL` explicitly before each call rather than relying on `.env` here, since PowerShell keeps environment variables set for the rest of the window (unlike a one-off prefix in bash), Step 3 already left it pointed at `template1`:
 
 ```powershell
-$env:DATABASE_URL = "postgres://postgres:postgres@localhost:51214/onboarding_wizard?sslmode=disable"
-npx prisma db execute --file prisma/migrations/00000000000000_init/migration.sql
+$env:DATABASE_URL = "postgres://postgres:postgres@localhost:$env:DB_PORT/onboarding_wizard?sslmode=disable"
+npx prisma migrate deploy
 
-$env:DATABASE_URL = "postgres://postgres:postgres@localhost:51214/onboarding_wizard_test?sslmode=disable"
-npx prisma db execute --file prisma/migrations/00000000000000_init/migration.sql
+$env:DATABASE_URL = "postgres://postgres:postgres@localhost:$env:DB_PORT/onboarding_wizard_test?sslmode=disable"
+npx prisma migrate deploy
 ```
+
+(`migrate deploy` applies whatever's in `prisma/migrations/`, including the hand-written partial index since it's part of that migration file, and records it in a `_prisma_migrations` table, so this is genuinely tracked migration history rather than a one-off raw SQL run. `prisma migrate dev` still doesn't work cleanly against this particular bundled local server, since it needs to diff against a shadow database; `migrate deploy` doesn't need that step, so it works fine here.)
 
 Then clear the override (important, otherwise it would leak into the backend's own `.env` loading in Step 6 and point it at the test database instead) and generate the Prisma database client:
 
