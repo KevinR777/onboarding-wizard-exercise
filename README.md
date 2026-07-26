@@ -369,43 +369,141 @@ The outcome isn't instant — landing on Step 2 (or clicking Retry) shows a "Val
 | POST | `/sessions/:id/advance-to-review` | Advance to REVIEW (requires VALID/PARTIAL) |
 | POST | `/sessions/:id/go-live` | Go live (requires REVIEW) |
 
-## Key assumptions & design decisions
+## Key decisions & design decisions
 
-The full reasoning behind each of these, including the back-and-forth where things were proposed one way and changed, is in [AI_LOG.md](./AI_LOG.md). The short version of the ones that most shaped the app:
+The full back-and-forth on these — including where I first tried one
+approach and changed it is in AI_LOG.md. Short version of the ones
+that mattered most:
 
-- **`currentStep` vs. `isLive` are two independent fields, not one state machine.** `WizardStep` stays 3-valued (`DETAILS`/`VALIDATE`/`REVIEW`) with no 4th "complete" value, completion is a separate `isLive: boolean`, checked first on every read. One enum value doing double duty as both "position" and "done" would create two ways to represent the same fact that could drift out of sync; two independent fields can't disagree with each other by construction.
-- **Idempotency via atomic guarded updates (`updateMany({ where: { id, currentStep: 'DETAILS' } })`), not idempotency keys or row locks.** Postgres already gives this for free with a conditional `UPDATE ... WHERE`, the WHERE clause acts as the lock. Idempotency keys are the right tool when a client might retry the *same logical action* multiple times and you need to recognize "I've seen this exact request before" (e.g. payments); row locking is the right tool when there's real contention across many concurrent writers. Neither problem exists here, every step transition is a single conditional write, and the condition itself is what makes a duplicate call a safe no-op instead of requiring extra bookkeeping.
-- **Every step-advancing endpoint follows the same shape**: check the session exists (404 if not) → check any other precondition (400 if unmet, e.g. `advance-to-review` requires the latest validation to be VALID/PARTIAL, `go-live` requires `currentStep === REVIEW`) → guarded `updateMany` → unconditional `findUniqueOrThrow` to read back the result. Existence is checked up front specifically so the final read-back never needs a nullable fallback, consistency across `submitDetails`/`advanceToReview`/`goLive` was a deliberate later refactor once the pattern was established with the third endpoint.
-- **`POST`, not `PATCH`/`PUT`, for step-submission endpoints** (`/details`, `/validate`, `/advance-to-review`, `/go-live`), even though several are simple field updates underneath. These represent the partner *submitting a step*, a state-transition action, not a REST resource edit, and staying consistent across all of them mattered more than PATCH's marginal semantic accuracy for any one of them.
-- **The mock Provider's outcome payload is a single `Json?` column**, not four sets of typed nullable columns. The four outcomes (`VALID`/`PARTIAL`/`INVALID`/`UNAVAILABLE`) have genuinely different shapes, Postgres can't enforce "warnings only when PARTIAL" either way, and a JSON payload keeps the table narrow and extensible if a 5th outcome ever shows up. The shape is still fully typed in application code via a discriminated union, the database just doesn't need to know about it.
-- **Client-side and server-side gates both exist for the same rules** (e.g. "Next" on Validate checks status is VALID/PARTIAL locally *and* the backend rejects with 400 if it isn't). The frontend check is for fast feedback and normal UX; the backend check is the actual guarantee, since a direct API call can always skip the frontend.
-- **"Deliberately not disabled" buttons.** Step 1's Next, Step 2's Retry/Next, and Step 3's Go Live are never disabled or blocked client-side while their request is in flight. This was intentional so a real double-click reaches the backend and exercises its idempotency guard for real, rather than the frontend silently preventing the exact scenario the backend was built to handle.
-- **`mutateAsync` + `async`/`try`/`catch` everywhere**, not `mutate()` with `onSuccess`/`onError` callbacks, standardized mid-build for consistency and readability once the team got comfortable with the pattern.
-- **Real test database over mocking Prisma.** Several correctness guarantees live in the database itself (the partial unique index, `onDelete: Cascade`, column defaults), a mocked Prisma client can't validate any of that and would give false confidence on exactly the things most worth testing.
-- **`ReviewStep` fetches its own data independently** (`useGetSession` + `useGetValidationAttempt`) rather than receiving it as props from `ValidateStep`. Props don't survive a remount, so a cold reload landing directly on Review would show nothing even though the real data exists, fetching independently means it's correct regardless of how the user got there.
-- **`staleTime: 0` + `refetchOnMount: 'always'`** on the session and validation-attempt queries, and `invalidateQueries` after every mutation that changes what one of them would return. Both this app's resumability requirement and its "show the new state immediately after an action" requirement mean stale cached data is actively wrong here, not just slightly behind.
-- **Provider API key stored as plaintext.** Fine against a mock provider in a take-home; flagged rather than silently accepted as production-appropriate.
+- **currentStep and isLive are separate fields.** I could've added a   4th "COMPLETE" value to the step enum instead of a separate isLive boolean, but that means two different ways to represent "done" that could get out of sync with each other. Keeping them independent means that can't happen.
+
+- **Idempotency comes from atomic guarded updates, not idempotency
+  keys or locking rows.** Something like updateMany({ where: { id,
+  currentStep: 'DETAILS' } }) already gives you a safe "only one of
+  these calls wins" guarantee for free, since Postgres processes the
+  check and the write as one atomic step. Idempotency keys are more
+  for things like payments, where a client might retry the exact same
+  logical action and you need to remember you've already seen it. Row
+  locking is more for heavy write contention. Neither of those
+  problems actually exists here — every step is just one conditional
+  write so I went with the simplest tool that actually solves it.
+
+- **Every step-advancing endpoint follows the same shape:** check the
+  session exists, check any other requirement for that step, do the
+  guarded update, read back the result. I didn't build them all
+  identically from the start until I noticed the pattern once I had a
+  couple of these built and went back to make the earlier one match.
+
+- **POST instead of PATCH/PUT for step endpoints**, even though a lot
+  of them are really just field updates underneath. These represent
+  the partner submitting a step and moving the wizard forward, which
+  felt more like an action than a plain resource edit and staying
+  consistent across all of them mattered more to me than being
+  technically precise about REST verbs for any one of them.
+
+- **The validation result is stored as one JSON payload column**,
+  not four separate typed columns. The four outcomes genuinely have
+  different shapes (items vs. warnings vs. a rejection reason) so instead of creating extra fields for each and filling them based on the validation results, just decided to save the payload as a JSON that will then be verified and typed in both BE and FE.
+
+- **Both the frontend and backend check the same rules** (like "can't
+  advance past Validate unless it's VALID or PARTIAL"). The frontend
+  check is just for a fast, responsive UI then the backend check is the
+  one that actually matters, since someone could always call the API
+  directly and skip the UI entirely. So the validations are done both in the FE and BE.
+
+- **The buttons are deliberately never disabled while a request is in
+  flight.** Step 1's Next, Step 2's Retry, Step 3's Go Live, none of
+  them block a second click. That was on purpose, so a real double-
+  click actually could reach the backend and prove the idempotency logic
+  works, instead of the frontend quietly preventing the exact scenario
+  I built the backend to handle.
+
+- **Used a real test database instead of mocking Prisma.** A lot of
+  what actually makes this correct lives in the database itself (a
+  partial unique index, column defaults, unique updates), a mocked
+  Prisma client wouldn't catch any of that, so testing against a mock
+  would have given false confidence on exactly the stuff most worth
+  testing.
+
+- **Review fetches its own data instead of receiving it from Step 2
+  as a prop.** Props don't survive a page reload, so if someone landed
+  directly on Review after a refresh, there would be nothing to show even though the real data exists. Fetching it independently means it
+  works no matter how they got there.
+
+- **The API key on Step 1 is stored as plain text.** Fine here since
+  it's a mock provider, flagging it rather than pretending that would be
+  okay in a real system.
 
 ## What was deliberately deferred, and why
 
-- **No stale-`PENDING` reconciliation.** The mock Provider resolves via an in-process 5-second `setTimeout`, not a persisted job/queue. If the server restarts mid-timer, that specific attempt stays `PENDING` forever until the partner clicks Retry (which is always available), it never self-heals. A real system would want a lazy, read-time staleness check (if `now() - createdAt` exceeds a timeout on read, reconcile to `UNAVAILABLE`) or a durable job queue; skipped here since the in-memory timer is sufficient to demonstrate the actual requirement (pending state surviving a *page reload*, which it does) without the added infrastructure a durable version would need.
-- **No back-navigation.** Nothing in the spec asked for revisiting a prior step, and the atomic-guarded-update idempotency model is simplest when transitions are strictly one-directional. `DetailsStep` does still pre-fill from persisted data as a byproduct of the resume-on-reload work, even though that pre-fill path isn't currently reachable without back-navigation, noted as inert-but-harmless rather than removed.
-- **No retry/attempt numbering.** Each `ValidationAttempt` retry is just a new row ordered by `createdAt`; there's no `attemptNumber` column. It was in an early schema draft and cut, "attempt #3" identity adds nothing a `createdAt`-ordered list doesn't already give for this app's actual needs.
-- **No shared types package between frontend and backend.** The frontend hand-maintains its own `Session`/`ValidationAttempt` types mirroring the Prisma models. Fine at this size; would become a real liability on a larger or longer-lived project.
-- **No auth, multi-tenancy, or rate limiting.** Out of scope per the exercise ("single trusted partner, no auth/user model needed"), but worth naming explicitly since a real B2B onboarding surface would need all three before being internet-facing.
-- **No production build/deploy configuration**, CI, or containerization (no Dockerfile/Compose), this was built and run entirely as a local dev exercise.
-- **Minimal error-state UX.** A genuine network failure while fetching the session (as opposed to a confirmed 404) currently leaves the wizard on its loading spinner indefinitely rather than showing a retry affordance, the behavior for that case was never specified, so nothing was silently invented for it.
-- **No structured logging/observability.** Backend errors go to `console.error` and a generic `{ error: "..." }` response; no request IDs, no log aggregation, no metrics.
+- **No stale-PENDING reconciliation.** The mock Provider resolves via
+  an in-process 5-second setTimeout, not a real job/queue. If the
+  server restarted mid-timer, that attempt would just stay PENDING
+  forever, it wouldn't fix itself. Retry is always available though,
+  so it's not a dead end, just not self healing. Didn't build the
+  proper fix (a job queue, or a check that says "if it's been pending
+  too long, mark it unavailable") since the simple timer already
+  proves the real requirement, surviving a page reload or server restart.
+
+- **No back-navigation.** Nothing in the requirements asked for going back to
+  edit an earlier step. Not because it couldn't be made idempotent too
+  it's more that going back opens up real questions, like what happens
+  to an already-completed validation if someone changes their API key
+  afterward, so it felt better to leave out entirely than answer
+  halfway.
+
+- **DetailsStep still pre-fills from saved data**, even though there's
+  currently no way to actually see it since back-navigation doesn't
+  exist. Left it in since it's harmless and it's the same pattern
+  needed for other steps anyway.
+
+- **No attempt numbering.** Every retry is just a new row, ordered by
+  when it was created. Had this in an early schema draft and cut it,
+  didn't add anything a created-at order doesn't already give.
+
+- **No shared types between frontend and backend.** The frontend has
+  its own types that just mirror the backend's. Fine at this size,
+  would get annoying on a bigger project.
+
+- **No auth or rate limiting.** The exercise said
+  single trusted partner, no auth needed, so left them out, but
+  worth naming since a real version of this couldn't go live without
+  them.
+
+- **No CI, deploy setup, or Docker.** Built and run entirely locally.
+
+- **Barely any error handling in the UI for real failures.** If
+  fetching a session fails for a real reason (not just a 404), the
+  wizard just sits on its loading spinner. 
+
+- **No real logging.** Just console.error and a plain error message,
+  nothing structured.
 
 ## What I'd do with another day
 
-- If the server restarts while a validation is still pending, right now it could get stuck in "pending" forever since nothing's watching it anymore. Could add a timeout check, if it's been pending too long, just mark it unavailable instead of leaving it stuck.
-- Set up a shared types package so the frontend isn't just manually copying the backend's response shapes by hand, a shared types package so it can be reused in both.
-- Add CI so typechecking and tests run automatically on every push, instead of only running them locally when I remember to.
-- Improve the error states in the UI, right now a failed session fetch doesn't really show the user anything useful or a way to retry, it's mostly just handled internally.
-- Add real logging instead of just `console.error`, something that'd actually be useful if this were running in production.
-- If this were a real product, things like back-navigation or real auth would need proper thought, not just bolted on. Auth especially, right now anything with a session ID can call any endpoint for it, since there's no concept of a logged-in user at all. Adding real auth means deciding how a user relates to a session (one-to-one? can a user have several?) and adding an ownership check to every existing endpoint, on top of the state-machine/idempotency logic already there.
-- Overall, go back through both the backend and frontend looking for general improvements, and clean up any unused code or logic left over from earlier iterations.
+- Fix the stuck-pending issue, if the server restarts while something's
+  still pending, add a check so it doesn't just sit there forever, mark
+  it unavailable after too long instead.
+- Set up a shared types package so the frontend isn't manually copying
+  the backend's response shapes by hand.
+- Add CI so typechecking and tests run automatically on every push,
+  instead of only when I remember to run them locally.
+- Improve the error states in the UI, right now a failed session fetch
+  doesn't show the user anything useful or a way to retry.
+- Add real logging instead of just console.error, something actually
+  useful in production.
+- If this were a real product, back-navigation and real auth would
+  need proper thought instead of just being added in quickly. Auth
+  especially, right now anyone with a session ID can call any endpoint
+  for it, there's no logged in user/token concept at all. Adding it means
+  figuring out how a user relates to a session and adding an role/permission
+  check to every endpoint, on top of the state-machine work already
+  there.
+- Spend time on the actual look of the UI, it's functional but pretty
+  simple right now, spacing, layout, and general polish could all use
+  another pass.
+- Overall, go back through both sides looking for general improvements
+  and clean up anything unused left over from earlier iterations.
 
 ## Why this stack
 
