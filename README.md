@@ -375,6 +375,31 @@ The full back-and-forth on these — including where I first tried one
 approach and changed it is in AI_LOG.md. Short version of the ones
 that mattered most:
 
+- **Two models, not one, and a session can have many validation attempts** 
+  OnboardingSession holds the wizard's current state
+  (fields, current step, isLive). ValidationAttempt is its own table,
+  one row per attempt, linked back by sessionId. Went with many
+  attempts per session instead of one field that gets overwritten
+  each time, mainly because each retry genuinely is a separate attempt,
+  that's literally what it is, and keeping the history matters: if a
+  partner tries invalid credentials, then retries and succeeds, both
+  of those are real, distinct things that happened, not just one
+  final answer. Overwriting a single field would lose that entirely.
+  It also keeps each retry as its own independent row.  Didn't need a separate partner/user model since there's no
+  auth, and didn't need a join table since it's a simple one-to-many.
+
+ **currentStep is a state machine, not just a status label or a Front End only state.**
+  It only ever moves forward, DETAILS → VALIDATE → REVIEW, one
+  direction, no way to jump ahead or skip a step. Every endpoint that
+  advances it checks the session is actually in the expected prior
+  state before moving it forward (the same guarded atomic update pattern used
+  everywhere else), so the current step always reflects exactly how
+  far the partner/user has actually gotten, not just what the frontend
+  thinks happened. This is also what makes resuming after a reload
+  work correctly, whatever's persisted in currentStep is the actual
+  truth, so the wizard just reads it and picks up exactly where it
+  left off.
+
 - **currentStep and isLive are separate fields.** I could've added a   4th "COMPLETE" value to the step enum instead of a separate isLive boolean, but that means two different ways to represent "done" that could get out of sync with each other. Keeping them independent means that can't happen.
 
 - **Idempotency comes from atomic guarded updates, not idempotency
