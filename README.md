@@ -368,7 +368,7 @@ The full reasoning behind each of these, including the back-and-forth where thin
 
 ## What I'd do with another day
 
-- If the server restarts while a validation is still pending, right now it could get stuck in "pending" forever since nothing's watching it anymore. Could add a simple timeout check, if it's been pending too long, just mark it unavailable instead of leaving it stuck.
+- If the server restarts while a validation is still pending, right now it could get stuck in "pending" forever since nothing's watching it anymore. Could add a timeout check, if it's been pending too long, just mark it unavailable instead of leaving it stuck.
 - Set up a shared types package so the frontend isn't just manually copying the backend's response shapes by hand, a shared types package so it can be reused in both.
 - Add CI so typechecking and tests run automatically on every push, instead of only running them locally when I remember to.
 - Improve the error states in the UI, right now a failed session fetch doesn't really show the user anything useful or a way to retry, it's mostly just handled internally.
